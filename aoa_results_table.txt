@@ -1,0 +1,16 @@
+\begin{table}[htb!]
+\centering
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{AOA Frame} & \textbf{Horizontal GT [\textdegree]} & \textbf{Horizontal AOA [\textdegree]} & \textbf{Vertical GT [\textdegree]} & \textbf{Vertical AOA [\textdegree]} \\ \hline
+1 & 51.46 & 56.92 $\pm$ 6.71 & 76.32 & 78.81 $\pm$ 4.03\\ 
+2 & 120.77 & 123.44 $\pm$ 12.03 & 75.29 & 69.11 $\pm$ 13.55\\ 
+3 & 129.87 & 119.45 $\pm$ 21.80 & 77.67 & 76.71 $\pm$ 13.28\\ 
+4 & 74.12 & 68.50 $\pm$ 18.03 & 74.04 & 75.89 $\pm$ 4.80\\ 
+\hline 
+\end{tabular}
+}
+\caption{Quantitative AOA estimation results.}
+\label{tab:aoaresults}
+\end{table}
