@@ -31,71 +31,85 @@ mic_19 = [0,5.4,-1.1];
 mic_20 = [5.4,5.4,-1.1];
 
 
-Mic1 = struct();
-Mic1.left = mic_1;
-Mic1.right = mic_2;
-Mic2 = struct();
-Mic2.left = mic_3;
-Mic2.right = mic_4;
-Mic3 = struct();
-Mic3.left = mic_5;
-Mic3.right = mic_6;
-Mic4 = struct();
-Mic4.left = mic_7;
-Mic4.right = mic_8;
-Mic5 = struct();
-Mic5.left = mic_9;
-Mic5.right = mic_10; 
-Mic6 = struct();
-Mic6.left = mic_11;
-Mic6.right = mic_12; 
-Mic7 = struct();
-Mic7.left = mic_13;
-Mic7.right = mic_14;
-Mic8 = struct();
-Mic8.left = mic_15;
-Mic8.right = mic_16;
+Mic1 = struct(); Mic1.left = mic_1;  Mic1.right = mic_2;
+Mic2 = struct(); Mic2.left = mic_3;  Mic2.right = mic_4;
+Mic3 = struct(); Mic3.left = mic_5;  Mic3.right = mic_6;
+Mic4 = struct(); Mic4.left = mic_7;  Mic4.right = mic_8;
+Mic5 = struct(); Mic5.left = mic_9;  Mic5.right = mic_10; 
+Mic6 = struct(); Mic6.left = mic_11; Mic6.right = mic_12; 
+Mic7 = struct(); Mic7.left = mic_13; Mic7.right = mic_14;
+Mic8 = struct(); Mic8.left = mic_15; Mic8.right = mic_16;
 
 mics_upper = [Mic1, Mic3, Mic5, Mic7];
 mics_lower = [Mic2, Mic4, Mic6, Mic8];
-ceiling = [mic_17; mic_18; mic_19; mic_20];
+ceiling    = [mic_17; mic_18; mic_19; mic_20];
 
 channels_add = {'left_channel', 'right_channel', 'channel3_channel', 'channel4_channel'};
 timestamp_dir = '20240805145919';
 audio_dir = fullfile('experiment_data', timestamp_dir);
-files = dir(fullfile(audio_dir, 'mic_0','left_channel','*.wav')); %get number of files/sounds 
+files = dir(fullfile(audio_dir, 'mic_0','left_channel','*.wav')); % get number of files/sounds 
 rssi_loc_estimates = zeros(length(files), 3);
 
-% Optimization parameters
-loc_source_init = [2.5, 3.03, 1.1]; % Initial guess for source location
-loc_source_gt = [2.9,3,1.24];
-max_iter = 200; % Maximum number of iterations
-tol = 1e-2; % Convergence tolerance
+% =============================
+% AoA-based initialization (NEW)
+% =============================
+USE_AOA_INIT   = true;                 % <--- set to true to use AoA seeds
+AOAINIT_FILE   = 'AoAintersect.txt';    % written earlier by provide_article_results
+AOA_MIN_FRAMES = 2;                     % require at least this many rays used
+AOA_MAX_RESID  = Inf;                   % optional gate on RMS residual (m)
 
-    
+aoa_xyz = []; aoa_frames = []; aoa_resid = [];
+if USE_AOA_INIT
+    [aoa_xyz, aoa_frames, aoa_resid] = load_aoa_inits(AOAINIT_FILE);
+    if isempty(aoa_xyz)
+        warning('AoA init enabled, but %s not found/empty. Falling back to fixed init.', AOAINIT_FILE);
+    else
+        fprintf('AoA init: using seeds from %s when available.\n', AOAINIT_FILE);
+    end
+end
+
+% Optimization parameters
+loc_source_init = [2.5, 3.03, 1.1]; % Fallback initial guess for source location
+loc_source_gt   = [2.9,3,1.24];
+max_iter = 200; % Maximum number of iterations
+tol      = 1e-2; % Convergence tolerance
+
 figure;
 % Initialize an array to store plot handles for the legend
 plot_handles = [];
-colors = lines(length(delay_matrices)); % 'lines' colormap gives distinct colors
+colors = lines(length(files)); % FIXED: used to refer to delay_matrices by mistake
 number_of_iterations = [];
 fprintf("Calculating the power and distance ratios...\n");
 
 for i = 1:length(files)
 
-    [loc_source_est, residuals] = gauss_newton_localization_rssi_opt(mics_upper,...
-        mics_lower, ceiling, i, audio_dir, loc_source_init, max_iter, tol);
+    % Select initializer: AoA seed if valid, else fallback
+    loc0 = loc_source_init;
+    if USE_AOA_INIT && ~isempty(aoa_xyz) && i <= size(aoa_xyz,1)
+        xyz_i   = aoa_xyz(i, :);
+        f_i     = [];
+        r_i     = [];
+        if ~isempty(aoa_frames), f_i = aoa_frames(i); end
+        if ~isempty(aoa_resid),  r_i = aoa_resid(i);  end
+        if all(isfinite(xyz_i)) && (isempty(f_i) || f_i >= AOA_MIN_FRAMES) ...
+                && (isempty(r_i) || isnan(r_i) || r_i <= AOA_MAX_RESID)
+            loc0 = xyz_i;
+        end
+    end
+
+    [loc_source_est, residuals] = gauss_newton_localization_rssi_opt( ...
+        mics_upper, mics_lower, ceiling, i, audio_dir, loc0, max_iter, tol);
+
     rssi_loc_estimates(i,:) = loc_source_est;
-    %fprintf('Estimated source location for file %d: (%.2f, %.2f, %.2f)\n', i, loc_source_est);
 
     hold on;
-    h = plot(residuals, '-o', 'LineWidth', 2, 'MarkerSize', 6, 'MarkerFaceColor', colors(i,:), 'Color', colors(i,:));
+    h = plot(residuals, '-o', 'LineWidth', 2, 'MarkerSize', 6, ...
+             'MarkerFaceColor', colors(i,:), 'Color', colors(i,:));
     plot_handles = [plot_handles, h];  % Store the plot handle for the legend
     hold off;
 
     number_of_iterations = [number_of_iterations; length(residuals)];
-
 end
-
 
 xlabel('Iteration', 'FontSize', 12);
 ylabel('Residual Norm', 'FontSize', 12);
@@ -103,10 +117,8 @@ title('RSSI-based localization via Gauss-Newton');
 grid on;
 set(gca, 'FontSize', 12, 'LineWidth', 1.5);
 
-
-legend_text = arrayfun(@(x) sprintf('Transient %d', x), 1:length(delay_matrices), 'UniformOutput', false);
+legend_text = arrayfun(@(x) sprintf('Transient %d', x), 1:length(files), 'UniformOutput', false); % FIXED: use files
 legend(plot_handles, legend_text, 'Location', 'Best');
-
 
 mean_loc = mean(rssi_loc_estimates(1:end-1,:));
 % the last result is omitted because it converged outside the room's
@@ -120,14 +132,9 @@ save(sprintf('gauss_newton_rssi_%s.mat', timestamp_dir), 'rssi_loc_estimates', '
 fprintf('Mean of iterations: %f +- %f\n', mean(number_of_iterations), std(number_of_iterations));
 
 
-
 function RMSE = get_rmse(gt, estimated_locations)
-
-
     squared_error_sum = 0;
     n = size(estimated_locations, 1);
-    
-    % Loop through each estimated location and calculate the squared error
     for i = 1:n
         estimated_loc = estimated_locations(i, :);
         squared_error = (estimated_loc(1) - gt(1))^2 + ...
@@ -135,9 +142,25 @@ function RMSE = get_rmse(gt, estimated_locations)
                         (estimated_loc(3) - gt(3))^2;
         squared_error_sum = squared_error_sum + squared_error;
     end
-    
     RMSE = sqrt(squared_error_sum / n);
-    
-    % Display the RMSE
     fprintf('The RMSE for this experiment is: %.4f m\n', RMSE);
+end
+
+% ============== NEW helper ==============
+function [xyz, frames_used, residual] = load_aoa_inits(filename)
+    xyz = []; frames_used = []; residual = [];
+    if ~isfile(filename), return; end
+    try
+        T = readtable(filename, 'FileType','text', 'Delimiter', '\t');
+    catch
+        warning('Failed reading %s. Falling back to default initializations.', filename);
+        return;
+    end
+    if ~all(ismember({'x','y','z'}, T.Properties.VariableNames))
+        warning('File %s missing columns x,y,z. Ignoring AoA seeds.', filename);
+        return;
+    end
+    xyz = [T.x, T.y, T.z];
+    if ismember('frames_used', T.Properties.VariableNames), frames_used = T.frames_used; end
+    if ismember('residual',    T.Properties.VariableNames), residual    = T.residual;    end
 end
